@@ -1,118 +1,144 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import html
-import json
-import time
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from urllib.parse import urljoin
 
 import requests
 
-COLLECTION_JSON = "https://www.isseymiyake.com/collections/thanks-7days/products.json?limit=250&page={page}"
-PRODUCT_BASE = "https://www.isseymiyake.com/products/"
-OUTPUT = Path("index.html")
-
-JST = timezone(timedelta(hours=9))
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ja,en;q=0.9,ko;q=0.8",
-}
+COLLECTION_JSON_URL = "https://www.isseymiyake.com/collections/thanks-7days/products.json?limit=250&page=1"
+PRODUCT_BASE_URL = "https://www.isseymiyake.com/products/"
+OUTPUT_FILE = "index.html"
 
 
-def yen(v):
+def yen(value):
     try:
-        n = int(v)
-        return f"¥{n:,}"
+        return f"{int(value):,}円"
     except Exception:
         return "-"
 
 
-def fetch_products(max_pages=20):
-    session = requests.Session()
-    products = []
-    for page in range(1, max_pages + 1):
-        url = COLLECTION_JSON.format(page=page)
-        r = session.get(url, headers=HEADERS, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-        batch = data.get("products", [])
-        if not batch:
-            break
-        products.extend(batch)
-        if len(batch) < 250:
-            break
-        time.sleep(0.5)
-    return products
+def fetch_products():
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*",
+    }
+    response = requests.get(COLLECTION_JSON_URL, headers=headers, timeout=20)
+    response.raise_for_status()
+    data = response.json()
+    return data.get("products", [])
+
+
+def product_available(product):
+    return any(v.get("available") is True for v in product.get("variants", []))
+
+
+def stock_counts(product):
+    variants = product.get("variants") or []
+    total = len(variants)
+    available = sum(1 for v in variants if v.get("available") is True)
+    soldout = total - available
+    return available, soldout, total
 
 
 def first_image(product):
     images = product.get("images") or []
     if images:
-        return images[0].get("src") or ""
+        return images[0].get("src", "")
     return ""
 
 
-def available_info(product):
+def first_variant(product):
     variants = product.get("variants") or []
-    available_variants = [v for v in variants if v.get("available") is True]
-    return len(available_variants), len(variants)
+    if variants:
+        return variants[0]
+    return {}
 
 
-def best_price(product):
+def build_variant_stock_html(product):
     variants = product.get("variants") or []
-    prices = []
-    compares = []
-    for v in variants:
-        if v.get("price"):
-            prices.append(v.get("price"))
-        if v.get("compare_at_price"):
-            compares.append(v.get("compare_at_price"))
-    price = min(prices, key=lambda x: int(x)) if prices else None
-    compare = max(compares, key=lambda x: int(x)) if compares else None
-    return price, compare
+    if not variants:
+        return '<div class="variant empty">옵션 정보 없음</div>'
 
+    rows = []
+    for variant in variants:
+        title = html.escape(variant.get("title") or "옵션")
+        sku = html.escape(variant.get("sku") or "")
+        available = variant.get("available") is True
+        cls = "variant available-variant" if available else "variant soldout-variant"
+        text = "재고 있음" if available else "품절"
 
-def product_card(product):
-    title = html.escape(product.get("title") or "No title")
-    handle = product.get("handle") or ""
-    link = PRODUCT_BASE + handle if handle else "#"
-    img = first_image(product)
-    price, compare = best_price(product)
-    avail, total_variants = available_info(product)
-    updated = product.get("updated_at") or ""
-    tags = product.get("tags") or []
-    tag_text = ", ".join([t for t in tags if "THANKS" in t or "優待" in t or "再入荷" in t or "公開" in t][:6])
+        sku_part = f'<span class="sku">{sku}</span>' if sku else ""
 
-    stock_class = "in" if avail > 0 else "out"
-    stock_text = f"재고 있음 {avail}/{total_variants}" if avail > 0 else "품절"
+        row = f"""
+            <div class="{cls}">
+                <span class="variant-name">{title}</span>
+                {sku_part}
+                <span class="variant-status">{text}</span>
+            </div>
+        """
+        rows.append(row)
 
-    img_html = f'<img src="{html.escape(img)}" alt="{title}" loading="lazy">' if img else '<div class="noimg">No Image</div>'
-    compare_html = f'<span class="compare">{yen(compare)}</span>' if compare else ''
-
-    return f"""
-    <article class="card" data-title="{title.lower()}" data-stock="{stock_class}">
-      <a class="image" href="{html.escape(link)}" target="_blank" rel="noopener">{img_html}</a>
-      <div class="body">
-        <div class="stock {stock_class}">{stock_text}</div>
-        <h2>{title}</h2>
-        <div class="price"><strong>{yen(price)}</strong> {compare_html}</div>
-        <div class="meta">updated: {html.escape(updated)}</div>
-        <div class="tags">{html.escape(tag_text)}</div>
-        <a class="btn" href="{html.escape(link)}" target="_blank" rel="noopener">상품 페이지 열기</a>
-      </div>
-    </article>
-    """
+    return "\n".join(rows)
 
 
 def build_html(products):
-    now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST")
+    jst = timezone(timedelta(hours=9))
+    now = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S JST")
+
+    cards = []
+
+    for product in products:
+        title = html.escape(product.get("title", "No title"))
+        handle = product.get("handle", "")
+        url = PRODUCT_BASE_URL + handle if handle else "#"
+        image = first_image(product)
+        available = product_available(product)
+        available_count, soldout_count, variant_total = stock_counts(product)
+
+        variant = first_variant(product)
+        price = yen(variant.get("price"))
+        compare_price = yen(variant.get("compare_at_price"))
+
+        tags = product.get("tags") or []
+        tag_text = ", ".join(tags[:8])
+        tag_text = html.escape(tag_text)
+
+        status_class = "available" if available else "soldout"
+        status_text = "재고 있음" if available else "전체 품절"
+
+        variant_stock_html = build_variant_stock_html(product)
+
+        card = f"""
+        <article class="card">
+            <a href="{html.escape(url)}" target="_blank" rel="noopener">
+                <div class="image-wrap">
+                    <img src="{html.escape(image)}" alt="{title}" loading="lazy">
+                </div>
+            </a>
+            <div class="content">
+                <div class="top-line">
+                    <div class="status {status_class}">{status_text}</div>
+                    <div class="stock-count">옵션 {available_count}/{variant_total}</div>
+                </div>
+                <h2>{title}</h2>
+                <p class="price">가격: {price}</p>
+                <p class="compare">정상가: {compare_price}</p>
+
+                <div class="stock-box">
+                    <div class="stock-title">옵션별 재고</div>
+                    {variant_stock_html}
+                </div>
+
+                <p class="tags">{tag_text}</p>
+                <a class="button" href="{html.escape(url)}" target="_blank" rel="noopener">상품 보기</a>
+            </div>
+        </article>
+        """
+        cards.append(card)
+
     total = len(products)
-    available_products = sum(1 for p in products if available_info(p)[0] > 0)
-    cards = "\n".join(product_card(p) for p in products)
+    available_products = sum(1 for p in products if product_available(p))
+    total_variants = sum(len(p.get("variants") or []) for p in products)
+    available_variants = sum(stock_counts(p)[0] for p in products)
+    soldout_variants = total_variants - available_variants
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -121,87 +147,219 @@ def build_html(products):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>THANKS 7DAYS Catalog</title>
 <style>
-  :root {{ --bg:#f6f3ee; --card:#fff; --text:#1d1b18; --muted:#777; --line:#e8e0d5; --accent:#111; }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; font-family:Arial, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background:var(--bg); color:var(--text); }}
-  header {{ position:sticky; top:0; z-index:10; background:rgba(246,243,238,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); padding:18px 20px; }}
-  .head {{ max-width:1200px; margin:0 auto; display:flex; gap:14px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; }}
-  h1 {{ margin:0; font-size:24px; letter-spacing:.02em; }}
-  .summary {{ color:var(--muted); font-size:13px; line-height:1.6; }}
-  .tools {{ max-width:1200px; margin:14px auto 0; display:flex; gap:8px; flex-wrap:wrap; }}
-  input, select {{ border:1px solid var(--line); background:#fff; padding:10px 12px; border-radius:10px; font-size:14px; }}
-  input {{ flex:1; min-width:220px; }}
-  main {{ max-width:1200px; margin:24px auto; padding:0 20px 40px; }}
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:18px; }}
-  .card {{ background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 8px 22px rgba(0,0,0,.04); }}
-  .image {{ display:block; aspect-ratio:5/7; background:#eee; overflow:hidden; }}
-  .image img {{ width:100%; height:100%; object-fit:cover; display:block; transition:transform .25s ease; }}
-  .image:hover img {{ transform:scale(1.03); }}
-  .noimg {{ height:100%; display:flex; align-items:center; justify-content:center; color:var(--muted); }}
-  .body {{ padding:14px; }}
-  .stock {{ display:inline-block; font-size:12px; padding:5px 8px; border-radius:999px; margin-bottom:9px; }}
-  .stock.in {{ background:#e6f7e9; color:#17722c; }}
-  .stock.out {{ background:#f3e3e3; color:#9b2222; }}
-  h2 {{ font-size:15px; line-height:1.35; margin:0 0 10px; min-height:40px; }}
-  .price {{ font-size:14px; margin-bottom:8px; }}
-  .price strong {{ font-size:16px; }}
-  .compare {{ color:var(--muted); text-decoration:line-through; margin-left:6px; }}
-  .meta, .tags {{ font-size:11px; color:var(--muted); line-height:1.45; min-height:16px; }}
-  .btn {{ display:block; text-align:center; margin-top:12px; padding:10px 12px; border-radius:12px; background:var(--accent); color:#fff; text-decoration:none; font-size:13px; }}
-  .hidden {{ display:none !important; }}
-  footer {{ max-width:1200px; margin:0 auto 30px; padding:0 20px; color:var(--muted); font-size:12px; }}
+    body {{
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f5f5f3;
+        color: #222;
+    }}
+    header {{
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(255,255,255,0.95);
+        border-bottom: 1px solid #ddd;
+        padding: 18px 24px;
+        backdrop-filter: blur(8px);
+    }}
+    h1 {{
+        margin: 0 0 8px;
+        font-size: 24px;
+    }}
+    .summary {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 13px;
+        color: #444;
+    }}
+    .summary span {{
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 999px;
+        padding: 5px 10px;
+    }}
+    .grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 18px;
+        padding: 22px;
+    }}
+    .card {{
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }}
+    .image-wrap {{
+        background: #eee;
+        aspect-ratio: 5 / 7;
+        overflow: hidden;
+    }}
+    img {{
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }}
+    .content {{
+        padding: 14px;
+    }}
+    .top-line {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+    }}
+    h2 {{
+        font-size: 15px;
+        line-height: 1.35;
+        min-height: 42px;
+        margin: 10px 0;
+    }}
+    .status {{
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: bold;
+    }}
+    .available {{
+        background: #e8f7e8;
+        color: #167a2e;
+    }}
+    .soldout {{
+        background: #f7e8e8;
+        color: #a82222;
+    }}
+    .stock-count {{
+        font-size: 12px;
+        color: #333;
+        background: #f0f0ee;
+        border-radius: 999px;
+        padding: 4px 8px;
+        white-space: nowrap;
+    }}
+    .price {{
+        font-weight: bold;
+        margin: 8px 0 4px;
+    }}
+    .compare {{
+        color: #777;
+        font-size: 13px;
+        margin: 0 0 8px;
+    }}
+    .stock-box {{
+        border: 1px solid #e1e1df;
+        background: #fafaf8;
+        border-radius: 10px;
+        padding: 9px;
+        margin: 10px 0;
+    }}
+    .stock-title {{
+        font-size: 12px;
+        font-weight: bold;
+        margin-bottom: 7px;
+        color: #333;
+    }}
+    .variant {{
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 8px;
+        align-items: center;
+        border-top: 1px solid #e8e8e6;
+        padding: 7px 0;
+        font-size: 12px;
+    }}
+    .variant:first-of-type {{
+        border-top: 0;
+    }}
+    .variant-name {{
+        line-height: 1.3;
+    }}
+    .sku {{
+        grid-column: 1 / -1;
+        color: #888;
+        font-size: 11px;
+    }}
+    .variant-status {{
+        border-radius: 999px;
+        padding: 3px 7px;
+        font-weight: bold;
+        white-space: nowrap;
+    }}
+    .available-variant .variant-status {{
+        background: #dcf5dc;
+        color: #137225;
+    }}
+    .soldout-variant {{
+        color: #999;
+    }}
+    .soldout-variant .variant-status {{
+        background: #eee;
+        color: #777;
+    }}
+    .tags {{
+        color: #777;
+        font-size: 11px;
+        line-height: 1.35;
+        min-height: 32px;
+    }}
+    .button {{
+        display: block;
+        text-align: center;
+        margin-top: 12px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        background: #222;
+        color: #fff;
+        text-decoration: none;
+        font-size: 13px;
+    }}
+    footer {{
+        padding: 24px;
+        text-align: center;
+        color: #777;
+        font-size: 12px;
+    }}
 </style>
 </head>
 <body>
 <header>
-  <div class="head">
-    <div>
-      <h1>THANKS 7DAYS Catalog</h1>
-      <div class="summary">총 {total}개 상품 · 재고 있음 {available_products}개 · 마지막 갱신 {now}</div>
+    <h1>THANKS 7DAYS Catalog</h1>
+    <div class="summary">
+        <span>총 상품 {total}개</span>
+        <span>재고 상품 {available_products}개</span>
+        <span>옵션 재고 {available_variants}/{total_variants}</span>
+        <span>품절 옵션 {soldout_variants}개</span>
+        <span>마지막 업데이트 {now}</span>
     </div>
-  </div>
-  <div class="tools">
-    <input id="q" type="search" placeholder="상품명 검색">
-    <select id="stock">
-      <option value="all">전체</option>
-      <option value="in">재고 있음</option>
-      <option value="out">품절</option>
-    </select>
-  </div>
 </header>
-<main>
-  <div class="grid" id="grid">
-    {cards}
-  </div>
+<main class="grid">
+    {''.join(cards)}
 </main>
 <footer>
-  로그인 없이 공개되는 products.json 데이터를 바탕으로 생성된 카탈로그입니다. 실제 회원 할인가는 로그인 후 상품 페이지에서 확인하세요.
+    Generated from public products.json
 </footer>
-<script>
-const q = document.getElementById('q');
-const stock = document.getElementById('stock');
-const cards = [...document.querySelectorAll('.card')];
-function applyFilter() {{
-  const term = q.value.trim().toLowerCase();
-  const s = stock.value;
-  cards.forEach(card => {{
-    const okTerm = !term || card.dataset.title.includes(term);
-    const okStock = s === 'all' || card.dataset.stock === s;
-    card.classList.toggle('hidden', !(okTerm && okStock));
-  }});
-}}
-q.addEventListener('input', applyFilter);
-stock.addEventListener('change', applyFilter);
-</script>
 </body>
-</html>"""
+</html>
+"""
 
 
 def main():
     products = fetch_products()
-    html_text = build_html(products)
-    OUTPUT.write_text(html_text, encoding="utf-8")
-    print(f"created {OUTPUT} with {len(products)} products")
+    page = build_html(products)
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(page)
+
+    total_variants = sum(len(p.get("variants") or []) for p in products)
+    available_variants = sum(stock_counts(p)[0] for p in products)
+    print(
+        f"Generated {OUTPUT_FILE} with {len(products)} products, "
+        f"{available_variants}/{total_variants} available variants."
+    )
 
 
 if __name__ == "__main__":
