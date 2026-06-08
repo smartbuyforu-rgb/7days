@@ -1,17 +1,12 @@
 # 7days
 
-THANKS 7DAYS catalog generator for GitHub Pages.
+Mobile compact version.
 
-## This version
-
-- Fetches all pages from `products.json`
-- Shows product stock and variant-level stock
-- Adds brand filter buttons
-- Auto-updates every 5 minutes with GitHub Actions
-- Page auto-refreshes every 5 minutes in the browser
-
-## Files
-
-- `thanks_7days_catalog_generator.py`: creates `index.html`
-- `.github/workflows/update.yml`: updates the catalog every 5 minutes
-- `index.html`: generated automatically by GitHub Actions
+- Mobile 3-column compact grid
+- Product photos remain visible
+- Tap product title area to expand details
+- Brand filter
+- Available-only filter
+- Variant-level stock
+- Fetches all pages from products.json
+- Auto-updates every 5 minutes
