@@ -1,10 +1,11 @@
 import html
+import json
 import time
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 
 import requests
 
-COLLECTION_HANDLE = "thanks-7days"
 COLLECTION_PAGE_URL = "https://www.isseymiyake.com/collections/thanks-7days?filter.p.vendor=&sort_by=manual&filter.v.availability=1"
 COLLECTION_JSON_BASE = "https://www.isseymiyake.com/collections/thanks-7days/products.json"
 PRODUCT_BASE_URL = "https://www.isseymiyake.com/products/"
@@ -108,7 +109,6 @@ def build_variant_stock_html(product):
         available = variant.get("available") is True
         cls = "variant available-variant" if available else "variant soldout-variant"
         text = "재고 있음" if available else "품절"
-
         sku_part = f'<span class="sku">{sku}</span>' if sku else ""
 
         row = f"""
@@ -124,16 +124,33 @@ def build_variant_stock_html(product):
 
 
 def sort_products(products):
-    # 재고 있는 상품을 먼저, 그 안에서는 updated_at 최신순 비슷하게 정렬
     return sorted(
         products,
         key=lambda p: (
             not product_available(p),
-            str(p.get("updated_at", "")),
+            str(p.get("vendor", "")),
             str(p.get("title", "")),
+            str(p.get("updated_at", "")),
         ),
-        reverse=False,
     )
+
+
+def build_brand_buttons(products):
+    counter = Counter((p.get("vendor") or "UNKNOWN") for p in products)
+    brands = sorted(counter.keys())
+
+    buttons = [
+        f'<button class="brand-button active" data-brand="ALL">전체 브랜드 <span>{len(products)}</span></button>'
+    ]
+
+    for brand in brands:
+        safe_brand = html.escape(brand)
+        count = counter[brand]
+        buttons.append(
+            f'<button class="brand-button" data-brand="{safe_brand}">{safe_brand} <span>{count}</span></button>'
+        )
+
+    return "\n".join(buttons)
 
 
 def build_html(products):
@@ -145,6 +162,7 @@ def build_html(products):
 
     for product in products:
         title = html.escape(product.get("title", "No title"))
+        vendor = html.escape(product.get("vendor") or "UNKNOWN")
         handle = product.get("handle", "")
         url = PRODUCT_BASE_URL + handle if handle else "#"
         image = first_image(product)
@@ -164,11 +182,10 @@ def build_html(products):
 
         status_class = "available" if available else "soldout"
         status_text = "재고 있음" if available else "전체 품절"
-
         variant_stock_html = build_variant_stock_html(product)
 
         card = f"""
-        <article class="card">
+        <article class="card" data-brand="{vendor}" data-available="{'1' if available else '0'}">
             <a href="{html.escape(url)}" target="_blank" rel="noopener">
                 <div class="image-wrap">
                     <img src="{html.escape(image)}" alt="{title}" loading="lazy">
@@ -179,6 +196,7 @@ def build_html(products):
                     <div class="status {status_class}">{status_text}</div>
                     <div class="stock-count">옵션 {available_count}/{variant_total}</div>
                 </div>
+                <div class="vendor">{vendor}</div>
                 <h2>{title}</h2>
                 <p class="price">가격: {price}</p>
                 <p class="compare">정상가: {compare_price}</p>
@@ -202,6 +220,10 @@ def build_html(products):
     total_variants = sum(len(p.get("variants") or []) for p in products)
     available_variants = sum(stock_counts(p)[0] for p in products)
     soldout_variants = total_variants - available_variants
+    brand_buttons = build_brand_buttons(products)
+
+    brand_counts = Counter((p.get("vendor") or "UNKNOWN") for p in products)
+    brand_counts_json = html.escape(json.dumps(brand_counts, ensure_ascii=False))
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -220,8 +242,8 @@ def build_html(products):
     header {{
         position: sticky;
         top: 0;
-        z-index: 10;
-        background: rgba(255,255,255,0.95);
+        z-index: 20;
+        background: rgba(255,255,255,0.96);
         border-bottom: 1px solid #ddd;
         padding: 18px 24px;
         backdrop-filter: blur(8px);
@@ -229,6 +251,8 @@ def build_html(products):
     h1 {{
         margin: 0 0 8px;
         font-size: 24px;
+        text-align: center;
+        letter-spacing: 0.02em;
     }}
     .summary {{
         display: flex;
@@ -236,6 +260,7 @@ def build_html(products):
         gap: 8px;
         font-size: 13px;
         color: #444;
+        justify-content: center;
     }}
     .summary span {{
         background: #fff;
@@ -247,9 +272,71 @@ def build_html(products):
         margin-top: 8px;
         font-size: 12px;
         color: #777;
+        text-align: center;
     }}
     .source a {{
         color: #555;
+    }}
+    .toolbar {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 14px;
+    }}
+    .brand-toggle {{
+        border: 1px solid #ccc;
+        background: #fff;
+        border-radius: 999px;
+        padding: 9px 14px;
+        font-weight: bold;
+        cursor: pointer;
+    }}
+    .brand-panel {{
+        display: none;
+        max-width: 760px;
+        margin: 12px auto 0;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        padding: 12px;
+    }}
+    .brand-panel.open {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+    }}
+    .brand-button {{
+        border: 1px solid #ddd;
+        background: #fafafa;
+        border-radius: 10px;
+        padding: 10px;
+        text-align: left;
+        cursor: pointer;
+        font-weight: bold;
+        color: #222;
+    }}
+    .brand-button span {{
+        float: right;
+        color: #777;
+        font-weight: normal;
+    }}
+    .brand-button.active {{
+        background: #222;
+        color: #fff;
+        border-color: #222;
+    }}
+    .brand-button.active span {{
+        color: #ddd;
+    }}
+    .current-filter {{
+        text-align: center;
+        margin-top: 8px;
+        font-size: 13px;
+        color: #333;
+        font-weight: bold;
     }}
     .grid {{
         display: grid;
@@ -263,6 +350,9 @@ def build_html(products):
         border-radius: 14px;
         overflow: hidden;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }}
+    .card.hidden {{
+        display: none;
     }}
     .image-wrap {{
         background: #eee;
@@ -284,11 +374,17 @@ def build_html(products):
         align-items: center;
         gap: 8px;
     }}
+    .vendor {{
+        color: #555;
+        font-size: 12px;
+        font-weight: bold;
+        margin-top: 10px;
+    }}
     h2 {{
         font-size: 15px;
         line-height: 1.35;
         min-height: 42px;
-        margin: 10px 0;
+        margin: 6px 0 10px;
     }}
     .status {{
         display: inline-block;
@@ -404,7 +500,7 @@ def build_html(products):
 </head>
 <body>
 <header>
-    <h1>THANKS 7DAYS Catalog</h1>
+    <h1>THANKS 7DAYS</h1>
     <div class="summary">
         <span>총 상품 {total}개</span>
         <span>재고 상품 {available_products}개</span>
@@ -413,16 +509,64 @@ def build_html(products):
         <span>마지막 갱신 {now}</span>
         <span>5분 자동 새로고침</span>
     </div>
+    <div class="toolbar">
+        <button class="brand-toggle" id="brandToggle">브랜드로 필터링 ▾</button>
+    </div>
+    <div class="brand-panel" id="brandPanel">
+        {brand_buttons}
+    </div>
+    <div class="current-filter" id="currentFilter">전체 브랜드 보기 · {total}개</div>
     <div class="source">
         Source: <a href="{html.escape(COLLECTION_PAGE_URL)}" target="_blank" rel="noopener">THANKS 7DAYS collection</a>
     </div>
 </header>
-<main class="grid">
+<main class="grid" id="grid">
     {''.join(cards)}
 </main>
 <footer>
     Generated from public products.json. Pages are fetched until empty.
 </footer>
+<script>
+    const brandCounts = JSON.parse("{brand_counts_json}".replaceAll("&quot;", '"'));
+    const cards = Array.from(document.querySelectorAll(".card"));
+    const buttons = Array.from(document.querySelectorAll(".brand-button"));
+    const panel = document.getElementById("brandPanel");
+    const toggle = document.getElementById("brandToggle");
+    const currentFilter = document.getElementById("currentFilter");
+
+    toggle.addEventListener("click", () => {{
+        panel.classList.toggle("open");
+    }});
+
+    function applyBrandFilter(brand) {{
+        let visible = 0;
+
+        cards.forEach(card => {{
+            const match = brand === "ALL" || card.dataset.brand === brand;
+            card.classList.toggle("hidden", !match);
+            if (match) visible += 1;
+        }});
+
+        buttons.forEach(btn => {{
+            btn.classList.toggle("active", btn.dataset.brand === brand);
+        }});
+
+        if (brand === "ALL") {{
+            currentFilter.textContent = `전체 브랜드 보기 · ${{visible}}개`;
+        }} else {{
+            currentFilter.textContent = `${{brand}} · ${{visible}}개`;
+        }}
+
+        panel.classList.remove("open");
+        window.scrollTo({{ top: 0, behavior: "smooth" }});
+    }}
+
+    buttons.forEach(btn => {{
+        btn.addEventListener("click", () => {{
+            applyBrandFilter(btn.dataset.brand);
+        }});
+    }});
+</script>
 </body>
 </html>
 """
