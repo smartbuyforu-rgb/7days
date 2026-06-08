@@ -2,11 +2,21 @@ name: Update Thanks Catalog
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "thanks_7days_catalog_generator.py"
+      - ".github/workflows/update.yml"
 
 permissions:
   contents: write
+
+concurrency:
+  group: update-thanks-catalog
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -14,15 +24,19 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install requests
+      - name: Install requests
+        run: python -m pip install requests
 
       - name: Generate index.html
         run: |
@@ -36,5 +50,5 @@ jobs:
           git config user.email "github-actions@github.com"
           git add index.html
           git status
-          git commit -m "Update catalog" || echo "No changes to commit"
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Update catalog"
           git push
