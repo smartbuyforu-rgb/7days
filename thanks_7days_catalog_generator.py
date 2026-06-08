@@ -194,6 +194,8 @@ def build_html(products):
             <button class="compact-head" type="button">
                 <span class="vendor">{vendor}</span>
                 <span class="title">{title}</span>
+                <span class="compact-price">{price}</span>
+                <span class="compact-compare">{compare_price}</span>
                 <span class="mini-row">
                     <span class="status {status_class}">{status_text}</span>
                     <span class="stock-count">{available_count}/{variant_total}</span>
@@ -262,6 +264,10 @@ img{{width:100%;height:100%;object-fit:cover;display:block}}
 .vendor{{display:block;color:#555;font-size:9px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .title{{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:29px;font-size:10.5px;line-height:1.35;font-weight:bold;margin-top:4px}}
 h2{{display:none}}
+
+.compact-price{{display:block;font-size:11px;font-weight:bold;margin-top:4px;color:#111}}
+.compact-compare{{display:block;font-size:9px;color:#777;text-decoration:line-through;margin-top:1px}}
+
 .mini-row{{display:flex;justify-content:space-between;align-items:center;gap:5px;margin-top:6px}}
 .status{{display:inline-block;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:bold}}
 .available{{background:#e8f7e8;color:#167a2e}}

@@ -1,9 +1,11 @@
 # 7days
 
-Mobile compact version.
+Mobile compact version with visible price.
 
 - Mobile 3-column compact grid
 - Product photos remain visible
+- Price visible without opening details
+- Normal price visible under price
 - Tap product title area to expand details
 - Brand filter
 - Available-only filter
