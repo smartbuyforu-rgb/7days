@@ -194,15 +194,15 @@ def build_html(products):
             <button class="compact-head" type="button">
                 <span class="vendor">{vendor}</span>
                 <span class="title">{title}</span>
-                <span class="compact-price">{price}</span>
-                <span class="compact-compare">{compare_price}</span>
+                <span class="compact-price">세일가 {price}</span>
+                <span class="compact-compare">정상가 {compare_price}</span>
                 <span class="mini-row">
                     <span class="status {status_class}">{status_text}</span>
                     <span class="stock-count">{available_count}/{variant_total}</span>
                 </span>
             </button>
             <div class="detail">
-                <p class="price">가격: {price}</p>
+                <p class="price">세일가: {price}</p>
                 <p class="compare">정상가: {compare_price}</p>
 
                 <div class="stock-box">
@@ -265,8 +265,8 @@ img{{width:100%;height:100%;object-fit:cover;display:block}}
 .title{{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:29px;font-size:10.5px;line-height:1.35;font-weight:bold;margin-top:4px}}
 h2{{display:none}}
 
-.compact-price{{display:block;font-size:11px;font-weight:bold;margin-top:4px;color:#111}}
-.compact-compare{{display:block;font-size:9px;color:#777;text-decoration:line-through;margin-top:1px}}
+.compact-price{{display:block;font-size:13px;font-weight:800;margin-top:5px;color:#111;letter-spacing:-0.02em}}
+.compact-compare{{display:block;font-size:10px;color:#777;text-decoration:line-through;margin-top:2px}}
 
 .mini-row{{display:flex;justify-content:space-between;align-items:center;gap:5px;margin-top:6px}}
 .status{{display:inline-block;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:bold}}
@@ -275,7 +275,7 @@ h2{{display:none}}
 .stock-count{{font-size:10px;font-weight:bold;color:#222;background:#f0f0ee;border-radius:999px;padding:2px 5px;white-space:nowrap}}
 .detail{{display:none;padding:0 7px 8px;border-top:1px solid #eee}}
 .card.open .detail{{display:block}}
-.price{{font-weight:bold;margin:8px 0 4px;font-size:12px}}
+.price{{font-weight:800;margin:8px 0 4px;font-size:14px}}
 .compare{{color:#777;font-size:11px;margin:0 0 8px}}
 .stock-box{{border:1px solid #e1e1df;background:#fafaf8;border-radius:9px;padding:7px;margin:8px 0}}
 .stock-title{{font-size:11px;font-weight:bold;margin-bottom:5px;color:#333}}
